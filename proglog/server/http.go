@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/gorilla/mux"
 )
@@ -62,13 +63,19 @@ func (s *httpServer) handleProduce(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (s *httpServer) handleConsume(w http.ResponseWriter, r *http.Request) {
-	var req ConsumeRequest
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	offsetStr := r.URL.Query().Get("offset")
+	if offsetStr == "" {
+		http.Error(w, "missing offset", http.StatusBadRequest)
 		return
 	}
-	record, err := s.Log.Read(req.Offset)
+
+	offset, err := strconv.ParseUint(offsetStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid offset", http.StatusBadRequest)
+		return
+	}
+
+	record, err := s.Log.Read(offset)
 	if err == ErrOffsetNotFound {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -77,10 +84,8 @@ func (s *httpServer) handleConsume(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	res := ConsumeResponse{Record: record}
-	err = json.NewEncoder(w).Encode(res)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
 }
